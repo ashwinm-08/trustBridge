@@ -209,7 +209,7 @@ TrustBridge delivers against **all 6 required submission criteria**:
 
 ---
 
-## 🎨 3-Way Dynamic Theme System
+## 🎨 3-Way Dynamic Theme System :
 
 Designed with financial dashboard aesthetics, TrustBridge supports three distinct visual themes:
 
@@ -221,7 +221,7 @@ Toggle between modes in 1 click via the top header navigation bar.
 
 ---
 
-## 🗣️ Universal Vernacular Multilingual Support
+## 🗣️ Universal Vernacular Multilingual Support:
 
 TrustBridge natively localizes the entire user interface, data visualizations, and legal terminology across **6 major Indian languages**:
 
@@ -234,7 +234,7 @@ TrustBridge natively localizes the entire user interface, data visualizations, a
 
 ---
 
-## 🛠️ Technology Stack
+## 🛠️ Technology Stack:
 
 - **Platform Core**: NewgenONE Digital Transformation Architecture (OmniDocs, iBPS, AI/ML, BAM)
 - **Frontend Framework**: React 18 with Vite
@@ -246,7 +246,7 @@ TrustBridge natively localizes the entire user interface, data visualizations, a
 
 ---
 
-## 🚀 Quick Start & Local Development
+## 🚀 Quick Start & Local Development:
 
 ### Prerequisites
 - Node.js 18.x or higher
