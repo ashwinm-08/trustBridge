@@ -40,12 +40,17 @@ export default function ScreenIntake({
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [transcriptionStep, setTranscriptionStep] = useState('translated');
   
-  // Real Microphone (Web Speech API) state
+  // Real Microphone (Web Speech API + MediaRecorder) state
   const [isListeningLive, setIsListeningLive] = useState(false);
   const [liveMicError, setLiveMicError] = useState(null);
   const [isEditingTranscript, setIsEditingTranscript] = useState(false);
   const [speakingTTS, setSpeakingTTS] = useState(false);
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState(null);
+  const [recordingDuration, setRecordingDuration] = useState(0);
   const recognitionRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const durationTimerRef = useRef(null);
 
   // Vernacular state driven by active language & user input
   const [activeSample, setActiveSample] = useState(currentAudioSample);
@@ -93,12 +98,69 @@ export default function ScreenIntake({
     setIsCodeRed(true);
   }, [currentLang, vernacularSamples, setIsCodeRed]);
 
-  // Web Speech API Initialization for Live Microphone
+  // Clean up timers on unmount
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    return () => {
+      if (durationTimerRef.current) clearInterval(durationTimerRef.current);
+    };
+  }, []);
+
+  // Handle simulated voice recording
+  useEffect(() => {
+    let interval;
+    if (isRecording) {
+      setTranscriptionStep('transcribing');
+      interval = setInterval(() => {
+        setRecordingSeconds((prev) => {
+          if (prev >= 6) {
+            setIsRecording(false);
+            setTranscriptionStep('translated');
+            return 6;
+          }
+          return prev + 1;
+        });
+      }, 700);
+    } else {
+      setRecordingSeconds(0);
+    }
+    return () => clearInterval(interval);
+  }, [isRecording]);
+
+  const toggleRecording = () => {
+    if (isListeningLive) {
+      stopRealVoiceRecording();
+    }
+    if (!isRecording) {
+      playVoiceWaveformSound(4500);
+      setIsRecording(true);
+      setTranscriptionStep('transcribing');
+    } else {
+      playUiClick();
+      setIsRecording(false);
+      setTranscriptionStep('translated');
+    }
+  };
+
+  // Start Real Voice Recording (Captures Audio + Transcribes to Words in Real Time)
+  const startRealVoiceRecording = async () => {
+    playUiClick();
+    setLiveMicError(null);
+    setRecordedAudioUrl(null);
+    audioChunksRef.current = [];
+    setInputText('');
+
+    // Stop simulated audio if playing
+    if (isRecording) {
+      setIsRecording(false);
+    }
+
+    // 1. Initialize Speech-to-Text Recognition
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       try {
+        if (recognitionRef.current) {
+          try { recognitionRef.current.abort(); } catch (e) {}
+        }
         const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
@@ -128,95 +190,80 @@ export default function ScreenIntake({
         recognition.onerror = (event) => {
           console.warn('SpeechRecognition error:', event.error);
           if (event.error === 'not-allowed') {
-            setLiveMicError('Microphone permission blocked. Please allow mic in browser address bar or edit text directly below.');
-          } else if (event.error !== 'no-speech') {
-            setLiveMicError(`Microphone notice: ${event.error}. You can edit text directly below.`);
+            setLiveMicError('Microphone permission blocked. Please allow microphone in your browser address bar.');
           }
-          setIsListeningLive(false);
         };
 
-        recognition.onend = () => {
-          setIsListeningLive(false);
-        };
-
+        recognition.start();
         recognitionRef.current = recognition;
       } catch (err) {
-        console.warn('Speech recognition init error', err);
+        console.warn('Speech recognition init error:', err);
       }
+    } else {
+      setLiveMicError('Speech-to-Text is not natively supported in this browser, but audio recording will still work! You can edit words manually below.');
     }
-  }, [currentLang]);
 
-  // Handle simulated voice recording
-  useEffect(() => {
-    let interval;
-    if (isRecording) {
-      setTranscriptionStep('transcribing');
-      interval = setInterval(() => {
-        setRecordingSeconds((prev) => {
-          if (prev >= 6) {
-            setIsRecording(false);
-            setTranscriptionStep('translated');
-            return 6;
+    // 2. Start Real Microphone Audio Capture (MediaRecorder)
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
           }
-          return prev + 1;
-        });
-      }, 700);
-    } else {
-      setRecordingSeconds(0);
-    }
-    return () => clearInterval(interval);
-  }, [isRecording]);
+        };
 
-  const toggleRecording = () => {
-    if (isListeningLive) {
-      recognitionRef.current?.stop();
-      setIsListeningLive(false);
-    }
-    if (!isRecording) {
-      playVoiceWaveformSound(4500);
-      setIsRecording(true);
-      setTranscriptionStep('transcribing');
+        mediaRecorder.onstop = () => {
+          if (audioChunksRef.current.length > 0) {
+            const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            const audioUrl = URL.createObjectURL(blob);
+            setRecordedAudioUrl(audioUrl);
+          }
+          stream.getTracks().forEach((track) => track.stop());
+        };
+
+        mediaRecorder.start(250);
+        mediaRecorderRef.current = mediaRecorder;
+        setIsListeningLive(true);
+        setRecordingDuration(0);
+
+        durationTimerRef.current = setInterval(() => {
+          setRecordingDuration((prev) => prev + 1);
+        }, 1000);
+      } catch (err) {
+        console.warn('Microphone getUserMedia error:', err);
+        setLiveMicError('Microphone access was denied. Please allow microphone permissions in your browser.');
+        setIsListeningLive(false);
+      }
     } else {
-      playUiClick();
-      setIsRecording(false);
-      setTranscriptionStep('translated');
+      setLiveMicError('Microphone recording is not supported in this browser environment. You can type words directly below.');
     }
   };
 
-  // Toggle Live Browser Microphone (User Speaks)
-  const toggleLiveMicrophone = () => {
+  // Stop Real Voice Recording
+  const stopRealVoiceRecording = () => {
     playUiClick();
-    setLiveMicError(null);
+    if (durationTimerRef.current) clearInterval(durationTimerRef.current);
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setLiveMicError('Speech Recognition is not natively supported in this browser. You can type/edit directly in the box below!');
-      setIsEditingTranscript(true);
-      return;
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (e) {}
     }
 
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try { mediaRecorderRef.current.stop(); } catch (e) {}
+    }
+
+    setIsListeningLive(false);
+  };
+
+  // Toggle Live Microphone
+  const toggleLiveMicrophone = () => {
     if (isListeningLive) {
-      recognitionRef.current?.stop();
-      setIsListeningLive(false);
+      stopRealVoiceRecording();
     } else {
-      if (isRecording) {
-        setIsRecording(false);
-      }
-      try {
-        recognitionRef.current?.start();
-        setIsListeningLive(true);
-      } catch (err) {
-        console.warn('Mic start error, retrying:', err);
-        try {
-          recognitionRef.current?.stop();
-          setTimeout(() => {
-            recognitionRef.current?.start();
-            setIsListeningLive(true);
-          }, 200);
-        } catch (e) {
-          setIsListeningLive(false);
-        }
-      }
+      startRealVoiceRecording();
     }
   };
 
@@ -394,11 +441,11 @@ export default function ScreenIntake({
                 className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl font-mono text-xs font-bold transition-all ${
                   isListeningLive
                     ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-glow-rose animate-pulse'
-                    : 'bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-400 hover:to-amber-400 text-slate-950 shadow-md font-bold'
+                    : 'bg-gradient-to-r from-rose-500 via-amber-500 to-rose-500 hover:from-rose-400 hover:to-amber-400 text-slate-950 shadow-md font-bold'
                 }`}
               >
                 {isListeningLive ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                <span>{isListeningLive ? 'Stop Mic' : '🎙️ Speak with Mic'}</span>
+                <span>{isListeningLive ? '⏹️ Stop Recording' : '🔴 Record My Voice'}</span>
               </button>
 
               {/* Button 2: Simulate Preset Vernacular Audio */}
@@ -411,7 +458,7 @@ export default function ScreenIntake({
                 }`}
               >
                 {isRecording ? <MicOff className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                <span>{isRecording ? 'Stop Audio' : '📻 Play Preset'}</span>
+                <span>{isRecording ? 'Stop Preset' : '📻 Play Preset Audio'}</span>
               </button>
 
               {/* Button 3: Toggle Direct Edit Mode */}
@@ -432,11 +479,53 @@ export default function ScreenIntake({
 
             </div>
 
+            {/* Live Recording Active Banner */}
+            {isListeningLive && (
+              <div className="p-3.5 rounded-xl bg-gradient-to-r from-rose-950 via-rose-900/60 to-rose-950 border-2 border-rose-500 text-white shadow-glow-rose animate-pulse space-y-1">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-mono font-bold text-xs">
+                    <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping"></span>
+                    <span className="text-rose-200">
+                      RECORDING YOUR REAL VOICE LIVE (00:{recordingDuration < 10 ? `0${recordingDuration}` : recordingDuration})
+                    </span>
+                  </div>
+                  <button
+                    onClick={stopRealVoiceRecording}
+                    className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-mono font-bold shadow-md"
+                  >
+                    ⏹️ Stop & Save Words
+                  </button>
+                </div>
+                <p className="text-xs text-rose-200/90 font-sans">
+                  Speak into your microphone now! Your voice is being recorded and your words will appear below in real time as you speak.
+                </p>
+              </div>
+            )}
+
+            {/* Recorded Audio Playback Box (If User Spoke and Recorded) */}
+            {recordedAudioUrl && !isListeningLive && (
+              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-emerald-500/50 space-y-2">
+                <div className="flex items-center justify-between text-xs font-mono">
+                  <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    Your Voice Note Successfully Recorded! (Click play to listen)
+                  </span>
+                  <button
+                    onClick={startRealVoiceRecording}
+                    className="text-cyan-400 hover:text-cyan-300 underline font-mono text-[11px]"
+                  >
+                    🔄 Record Again
+                  </button>
+                </div>
+                <audio src={recordedAudioUrl} controls className="w-full h-9 rounded-lg" />
+              </div>
+            )}
+
             {/* Audio Waveform Equalizer (Animates when Mic or Audio is active) */}
             <div className="bg-slate-950/80 rounded-xl p-3 border border-slate-800 flex items-center justify-between gap-3">
               <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400">
                 <Radio className={`w-3.5 h-3.5 ${isListeningLive || isRecording ? 'text-rose-400 animate-pulse' : 'text-slate-600'}`} />
-                <span>{isListeningLive ? 'Live Mic Input' : 'Acoustic Waveform'}</span>
+                <span>{isListeningLive ? 'Live Microphone Recording' : 'Acoustic Waveform'}</span>
               </div>
 
               {/* Animated Equalizer Bars */}
@@ -480,28 +569,30 @@ export default function ScreenIntake({
               <div className="flex items-center justify-between text-xs font-mono text-slate-400">
                 <span className="flex items-center gap-1.5 text-cyan-300 font-semibold">
                   <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                  Captured Citizen Voice Speech (Editable):
+                  Words Transcribed From Your Voice (Shown on Website):
                 </span>
                 <span className="text-cyan-400 font-mono text-[11px]">
-                  {activeSample.languageName} • {isListeningLive ? 'Live Listening' : 'Verified'}
+                  {activeSample.languageName} • {isListeningLive ? '🔴 Transcribing Now' : 'Verified Words'}
                 </span>
               </div>
 
               {/* Editable Voice Box */}
               <div className="bg-slate-900/95 rounded-xl p-3.5 border border-slate-800 text-sm text-slate-200 font-sans leading-relaxed focus-within:border-cyan-500/60 transition-colors">
                 <div className="text-[11px] font-mono text-slate-400 mb-1.5 flex items-center justify-between">
-                  <span className="flex items-center gap-1 text-cyan-400">
+                  <span className="flex items-center gap-1 text-cyan-400 font-semibold">
                     <Edit3 className="w-3 h-3" />
-                    <span>Live Transcript (You can type or speak to change):</span>
+                    <span>Your Spoken Words (You can see & change them here anytime):</span>
                   </span>
-                  <span className="text-emerald-400 font-mono text-[10px]">Confidence: 99.4%</span>
+                  <span className="text-emerald-400 font-mono text-[10px]">
+                    {isListeningLive ? 'Live Speech Recognition' : 'Confidence: 99.4%'}
+                  </span>
                 </div>
 
                 <textarea
                   value={inputText}
                   onChange={handleTextChange}
                   rows={3}
-                  placeholder="Speak into your microphone or type your grievance here (e.g. My ₹72,000 was debited at the ATM without cash, my wife is in ICU...)"
+                  placeholder="Your spoken words will appear here as you talk into the microphone. You can also click to edit, add, or change any words..."
                   className="w-full bg-slate-950/70 border border-slate-800 rounded-lg p-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 resize-y leading-relaxed font-sans"
                 />
 
