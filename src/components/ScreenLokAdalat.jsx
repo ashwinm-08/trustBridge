@@ -25,7 +25,7 @@ import {
   Globe
 } from 'lucide-react';
 
-export default function ScreenLokAdalat({ activePersona, onNavigate }) {
+export default function ScreenLokAdalat({ activePersona, customVoiceCase, onNavigate }) {
   const { currentLang, t, languages } = useLanguage();
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -282,8 +282,14 @@ export default function ScreenLokAdalat({ activePersona, onNavigate }) {
             </button>
           </div>
 
-          <div className="text-xs font-mono text-slate-400 hidden sm:block">
-            Case: <span className="text-white font-semibold">TB-2026-UP-8921</span>
+          <div className="text-xs font-mono text-slate-400 hidden sm:flex items-center gap-2">
+            {customVoiceCase?.customVoiceText && (
+              <span className="px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-500/40 flex items-center gap-1 text-[10px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                Live User Voice Linked
+              </span>
+            )}
+            <span>Case: <span className="text-white font-semibold">TB-2026-UP-8921</span></span>
           </div>
         </div>
 
@@ -324,6 +330,19 @@ export default function ScreenLokAdalat({ activePersona, onNavigate }) {
                           {step.timestamp}
                         </div>
                       </div>
+
+                      {/* Render User Spoken Voice Deposition if present */}
+                      {isAdvocate && step.step === 1 && customVoiceCase?.customVoiceText && (
+                        <div className="p-3 rounded-xl bg-cyan-950/60 border border-cyan-500/40 text-xs font-mono text-cyan-200 shadow-glow-cyan">
+                          <div className="font-bold text-cyan-400 flex items-center gap-1.5 mb-1 text-[11px] uppercase tracking-wide">
+                            <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+                            Live Citizen Voice Deposition Recorded:
+                          </div>
+                          <p className="italic text-slate-100 font-sans text-sm">
+                            "{customVoiceCase.customVoiceText}"
+                          </p>
+                        </div>
+                      )}
 
                       <p className="text-sm text-slate-200 leading-relaxed">
                         {step.message}

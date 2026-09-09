@@ -21,6 +21,7 @@ export default function App() {
   const [activePersona, setActivePersona] = useState(PERSONAS[0]);
   const [isCodeRed, setIsCodeRed] = useState(true);
   const [isCriteriaOpen, setIsCriteriaOpen] = useState(false);
+  const [customVoiceCase, setCustomVoiceCase] = useState(null);
 
   const handleSelectPersona = (persona) => {
     setActivePersona(persona);
@@ -29,6 +30,7 @@ export default function App() {
 
   const handleResetCase = () => {
     setActivePersona(PERSONAS[0]);
+    setCustomVoiceCase(null);
     setIsCodeRed(true);
     setCurrentScreen('hero');
   };
@@ -69,7 +71,10 @@ export default function App() {
             <ScreenIntake
               activePersona={activePersona}
               onSelectPersona={handleSelectPersona}
-              onProceedToLokAdalat={() => setCurrentScreen('lok-adalat')}
+              onProceedToLokAdalat={(customData) => {
+                if (customData) setCustomVoiceCase(customData);
+                setCurrentScreen('lok-adalat');
+              }}
               isCodeRed={isCodeRed}
               setIsCodeRed={setIsCodeRed}
             />
@@ -78,6 +83,7 @@ export default function App() {
           {currentScreen === 'lok-adalat' && (
             <ScreenLokAdalat
               activePersona={activePersona}
+              customVoiceCase={customVoiceCase}
               onNavigate={setCurrentScreen}
             />
           )}
