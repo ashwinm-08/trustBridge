@@ -220,6 +220,16 @@ export default function ScreenIntake({
             const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
             const audioUrl = URL.createObjectURL(blob);
             setRecordedAudioUrl(audioUrl);
+
+            // Automatically play back what was recorded as soon as recording stops!
+            setTimeout(() => {
+              try {
+                const autoPlayer = new Audio(audioUrl);
+                autoPlayer.play().catch((err) => console.log('Auto playback notice:', err));
+              } catch (e) {
+                console.warn('Auto play audio error', e);
+              }
+            }, 300);
           }
           stream.getTracks().forEach((track) => track.stop());
         };
@@ -229,8 +239,15 @@ export default function ScreenIntake({
         setIsListeningLive(true);
         setRecordingDuration(0);
 
+        // 5-Minute Timer (300 seconds max)
         durationTimerRef.current = setInterval(() => {
-          setRecordingDuration((prev) => prev + 1);
+          setRecordingDuration((prev) => {
+            if (prev >= 299) {
+              stopRealVoiceRecording();
+              return 300;
+            }
+            return prev + 1;
+          });
         }, 1000);
       } catch (err) {
         console.warn('Microphone getUserMedia error:', err);
@@ -265,6 +282,13 @@ export default function ScreenIntake({
     } else {
       startRealVoiceRecording();
     }
+  };
+
+  // Format Duration into MM:SS
+  const formatDuration = (secs) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
   // Text-To-Speech: Browser reads back what was recognized/edited
@@ -445,7 +469,7 @@ export default function ScreenIntake({
                 }`}
               >
                 {isListeningLive ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                <span>{isListeningLive ? '⏹️ Stop Recording' : '🔴 Record My Voice'}</span>
+                <span>{isListeningLive ? '⏹️ Stop Recording' : '🔴 Record My Voice (5 Min Max)'}</span>
               </button>
 
               {/* Button 2: Simulate Preset Vernacular Audio */}
@@ -479,45 +503,45 @@ export default function ScreenIntake({
 
             </div>
 
-            {/* Live Recording Active Banner */}
+            {/* Live Recording Active Banner (Up to 5 Minutes) */}
             {isListeningLive && (
               <div className="p-3.5 rounded-xl bg-gradient-to-r from-rose-950 via-rose-900/60 to-rose-950 border-2 border-rose-500 text-white shadow-glow-rose animate-pulse space-y-1">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 font-mono font-bold text-xs">
                     <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping"></span>
                     <span className="text-rose-200">
-                      RECORDING YOUR REAL VOICE LIVE (00:{recordingDuration < 10 ? `0${recordingDuration}` : recordingDuration})
+                      RECORDING YOUR VOICE LIVE ({formatDuration(recordingDuration)} / 05:00 MAX)
                     </span>
                   </div>
                   <button
                     onClick={stopRealVoiceRecording}
                     className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-mono font-bold shadow-md"
                   >
-                    ⏹️ Stop & Save Words
+                    ⏹️ Stop & Auto-Replay
                   </button>
                 </div>
                 <p className="text-xs text-rose-200/90 font-sans">
-                  Speak into your microphone now! Your voice is being recorded and your words will appear below in real time as you speak.
+                  Speak now! You have up to 5 minutes. As you speak, your words will appear below in real time. When you stop, it will immediately play back your voice!
                 </p>
               </div>
             )}
 
-            {/* Recorded Audio Playback Box (If User Spoke and Recorded) */}
+            {/* Recorded Audio Playback Box (Auto-Plays Immediately on Stop) */}
             {recordedAudioUrl && !isListeningLive && (
               <div className="p-3.5 rounded-xl bg-slate-900/90 border border-emerald-500/50 space-y-2">
                 <div className="flex items-center justify-between text-xs font-mono">
                   <span className="text-emerald-400 font-bold flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    Your Voice Note Successfully Recorded! (Click play to listen)
+                    <span>Your Voice Recorded ({formatDuration(recordingDuration)}) — Automatically Playing Back Now 🔊</span>
                   </span>
                   <button
                     onClick={startRealVoiceRecording}
                     className="text-cyan-400 hover:text-cyan-300 underline font-mono text-[11px]"
                   >
-                    🔄 Record Again
+                    🔄 Record Again (5 Min)
                   </button>
                 </div>
-                <audio src={recordedAudioUrl} controls className="w-full h-9 rounded-lg" />
+                <audio autoPlay src={recordedAudioUrl} controls className="w-full h-9 rounded-lg" />
               </div>
             )}
 
